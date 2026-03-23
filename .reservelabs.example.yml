@@ -1,0 +1,20 @@
+# ReserveLabs Configuration (all optional — smart defaults apply)
+# Copy to your project root as .reservelabs.yml
+
+spacing_base: 4
+a11y_level: AA          # AA | AAA
+max_font_sizes: 6
+allow_hardcoded_colors: false
+
+exclude:
+  - "node_modules"
+  - "dist"
+  - ".next"
+
+critical:
+  - a11y
+  - states
+warning:
+  - spacing
+  - color
+  - typography
