@@ -210,6 +210,18 @@ When the agent encounters API keys, tokens, passwords, connection strings, email
 
 ---
 
+## Related
+
+**[Nineteen](https://github.com/reservelab/nineteen)** — a 19-question report card for
+the same kind of codebase. It asks whether the project is *finished*: is the price
+check on the server, is there a rollback, has a backup ever been restored. Every answer
+carries a `file:line` citation.
+
+ReserveLabs asks whether your app is *coherent*. Nineteen asks whether it is *done*.
+Same problem underneath: AI writes code faster than anyone checks it.
+
+---
+
 ## vs Codex-Sentinel
 
 **Codex-Sentinel** = security checkpoints. Catches vulnerabilities, injection risks, auth gaps.
