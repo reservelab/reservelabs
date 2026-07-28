@@ -46,11 +46,20 @@ Before running any stage, gather context:
 - If not found: use defaults (4px grid, AA, 6 sizes, no hardcoded colors)
 
 ### Step 2: Read project context
-- Check for tailwind.config.ts or tailwind.config.js
-  - If found: extract theme.extend.colors, spacing, fontSize, borderRadius
-  - Also check for Tailwind v4 CSS-based config (@theme in CSS files)
+- Determine the Tailwind major version FIRST — read `tailwindcss` in package.json.
+  Never infer it from the presence of tailwind.config.* (v4 can load that file
+  via @config). See supported-stacks/react-nextjs-tailwind.md.
+- **Tailwind v4:** start from the CSS entry point (@import "tailwindcss"), follow
+  its @import chain, and collect every @theme / @theme inline block
+  - Namespaces: --color-*, --font-*, --text-* (font size), --font-weight-*,
+    --tracking-*, --leading-*, --spacing, --breakpoint-*, --container-*,
+    --radius-*, --shadow-*, --ease-*, --animate-*
+  - Watch for resets (--color-*: initial) — they remove the defaults
+- **Tailwind v3:** read tailwind.config.ts/js
+  - Extract theme.extend.colors, spacing, fontSize, borderRadius
 - Check for globals.css / theme.ts / CSS custom properties
-  - If found: extract --primary, --secondary, etc.
+  - If found: sort them into registered / runtime / rogue (see stack file).
+    A :root variable with no @theme bridge generates no utility in v4.
 - If nothing found: use static defaults only
 
 ### Step 3: Scan existing patterns

@@ -31,12 +31,17 @@ Rules for spacing, color, and typography consistency.
 - **Auto-fix:** Yes — suggest nearest theme color
 
 ### VS-004: Color Outside Theme Palette
-- **Check:** Color classes not in tailwind.config theme.extend.colors
+- **Check:** Color classes not in the project palette — `theme.extend.colors`
+  (Tailwind v3) or the `--color-*` variables in the reachable `@theme` blocks
+  (Tailwind v4)
 - **Why:** Off-palette colors create visual inconsistency
 - **Good:** Colors from project theme
 - **Bad:** Random Tailwind colors not in theme
 - **Confidence:** MEDIUM
 - **Auto-fix:** No — needs design decision
+- **Normalize before comparing:** v4 ships an OKLCH palette while AI-written code
+  keeps emitting hex. Convert both sides to one color space first — never report
+  "off-palette" on a notation difference alone (see STACK-TW-006)
 
 ## Typography Rules
 

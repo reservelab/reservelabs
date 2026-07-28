@@ -41,7 +41,10 @@ Use chunk strategy:
 ### Layer 2: Color Discipline
 - Collect all color references (text-*, bg-*, border-*, fill-*, stroke-*)
 - Identify hardcoded values (#xxx, rgb(), hsl())
-- Compare against Tailwind theme colors (if config available)
+- Compare against the project palette — v3: tailwind.config theme colors;
+  v4: `--color-*` in the reachable @theme blocks
+- Normalize color notation (hex / rgb / hsl / oklch) before comparing — v4 and
+  shadcn emit OKLCH, AI-written code emits hex; same color, different spelling
 - Count unique colors — flag if >15 unique non-gray colors
 - Confidence: HIGH for hardcoded, MEDIUM for palette sprawl
 - Reference: references/visual-rules.md (VS-003, VS-004)

@@ -1,6 +1,8 @@
 # ReserveLabs Configuration (all optional — smart defaults apply)
 # Copy to your project root as .reservelabs.yml
 
+# On Tailwind v4, if the project defines --spacing in @theme, that value wins
+# over spacing_base — the scale is derived from it via calc(var(--spacing) * n).
 spacing_base: 4
 a11y_level: AA          # AA | AAA
 max_font_sizes: 6

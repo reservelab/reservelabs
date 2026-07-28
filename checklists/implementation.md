@@ -6,7 +6,9 @@ or after writing/modifying .tsx/.jsx/.css files.
 
 ## Context Loading
 1. Read .reservelabs.yml if exists → overrides
-2. Read tailwind.config if exists → theme tokens
+2. Read the theme source → v4: @theme blocks reachable from the CSS entry point.
+   v3: tailwind.config. Determine the major from package.json first
+   (see supported-stacks/react-nextjs-tailwind.md)
 3. Scan src/components/ or src/app/ → existing patterns baseline
 4. Read the specific file(s) developer is asking about
 

@@ -14,9 +14,12 @@ Identify this stack by checking for the following files in the project root
 | Signal | File Pattern | Confirms |
 |--------|-------------|----------|
 | Next.js | `next.config.js`, `next.config.mjs`, `next.config.ts` | Next.js framework |
-| Tailwind v3 | `tailwind.config.js`, `tailwind.config.ts`, `tailwind.config.mjs` | Tailwind CSS v3 |
-| Tailwind v4 | `@theme` directive inside any `.css` file (typically `app/globals.css`) | Tailwind CSS v4 |
-| PostCSS | `postcss.config.js`, `postcss.config.mjs`, `postcss.config.cjs` | Tailwind (via PostCSS) |
+| Tailwind version | `tailwindcss` entry in `package.json` / lockfile | **Authoritative** — v3 vs v4 |
+| Tailwind v4 (CSS) | `@import "tailwindcss"` in the entry CSS; `@theme`, `@utility`, `@source` | Tailwind CSS v4 |
+| Tailwind v4 (build) | `@tailwindcss/postcss` or `@tailwindcss/vite` in `package.json` | Tailwind CSS v4 |
+| Tailwind v3 (CSS) | `@tailwind base;` / `@tailwind components;` / `@tailwind utilities;` | Tailwind CSS v3 |
+| Tailwind v3 (build) | `tailwindcss` listed directly in `postcss.config.*` plugins | Tailwind CSS v3 |
+| JS config | `tailwind.config.js`, `tailwind.config.ts`, `tailwind.config.mjs` | **Not a version signal** — see below |
 | React | `package.json` containing `"react"` or `"next"` in `dependencies` | React / Next.js |
 | App Router | `app/` directory with `layout.tsx` or `page.tsx` | Next.js App Router |
 | Pages Router | `pages/` directory with `_app.tsx` or `index.tsx` | Next.js Pages Router |
@@ -24,9 +27,25 @@ Identify this stack by checking for the following files in the project root
 **Detection order:**
 1. Check `package.json` → confirms React/Next.js
 2. Check for `next.config.*` → confirms Next.js
-3. Check for `tailwind.config.*` → confirms Tailwind v3
-4. If no Tailwind config file: search CSS files for `@theme` → confirms Tailwind v4
-5. Check for `postcss.config.*` → secondary Tailwind confirmation
+3. Read the `tailwindcss` version from `package.json` (and the lockfile if the range
+   is ambiguous) → this is the **primary** version evidence
+4. If the version is unreadable, fall back to the CSS entry point:
+   `@import "tailwindcss"` → v4; `@tailwind base/components/utilities` → v3
+5. Check the build plugin: `@tailwindcss/postcss` / `@tailwindcss/vite` → v4;
+   plain `tailwindcss` in `postcss.config.*` → v3
+
+**Do not infer the version from `tailwind.config.*`.** A v4 project can still load
+that file through `@config "../tailwind.config.js"` — a *hybrid v4* setup. When both
+exist, CSS `@theme` definitions win over the JS config on conflict. Treat a project as
+v3 only when the version evidence in step 3–5 says so.
+
+**Do not treat `postcss.config.*` alone as proof of Tailwind** — it is used by many
+other tools. Likewise, a `@theme` block in a CSS file that is never reached from the
+entry point (not imported anywhere) is a dead theme file, not the active config.
+
+**Monorepos:** resolve the version per workspace, not per repository. A genuine v3
+package and a v4 package can coexist in one repo. A single build pipeline, however,
+runs exactly one major.
 
 If only React is detected (no Next.js), the stack still applies — skip
 Next.js-specific checks (Image component, directives, next/font).
@@ -61,26 +80,63 @@ Tailwind v4 moves configuration into CSS using the `@theme` directive.
 Look for this in `globals.css`, `app.css`, or any root CSS file:
 
 ```css
+@import "tailwindcss";
+
 @theme {
-  --color-primary: #3b82f6;
+  --color-primary: oklch(0.72 0.11 178);
   --color-secondary: #64748b;
   --spacing-18: 4.5rem;
-  --font-size-2xs: 0.625rem;
+  --text-2xs: 0.625rem;
   --radius-4xl: 2rem;
 }
 ```
 
-**Extraction rules for v4:**
-- `--color-*` → project color palette
-- `--spacing-*` → custom spacing tokens
-- `--font-size-*` → custom type scale
-- `--radius-*` → custom border radii
-- `--font-*` (non-size) → custom font families
-- `--breakpoint-*` → custom breakpoints
-- `--animate-*` → custom animations
+**The source of truth is a graph, not a file.** In v3 you read one JS object.
+In v4 you must start from the CSS entry point (the file containing
+`@import "tailwindcss"`) and follow its `@import` chain, collecting **every**
+`@theme` block along the way. Resolve them in cascade order: a later block
+overrides an earlier one for the same variable. A `@theme` block in a CSS file
+that nothing imports is dead code — ignore it, and optionally report it.
 
-Also check for `@theme inline` (values available in CSS only, not as
-utility classes) — these are still valid tokens for ReserveLabs purposes.
+**Theme namespaces in v4** — each one generates a family of utilities:
+
+| Namespace | Generates |
+|-----------|-----------|
+| `--color-*` | `bg-*`, `text-*`, `border-*`, … |
+| `--font-*` | font family — `font-sans` |
+| `--text-*` | **font size** — `text-xl` |
+| `--font-weight-*` | `font-bold` |
+| `--tracking-*` | `tracking-wide` |
+| `--leading-*` | `leading-tight` |
+| `--spacing` / `--spacing-*` | `p-4`, `w-16`, `gap-2`, … |
+| `--breakpoint-*` | `sm:`, `md:` variants |
+| `--container-*` | `max-w-md`, `@sm:` container queries |
+| `--radius-*` | `rounded-*` |
+| `--shadow-*`, `--inset-shadow-*`, `--drop-shadow-*` | shadow utilities |
+| `--blur-*`, `--perspective-*`, `--aspect-*` | filter / 3D / ratio utilities |
+| `--ease-*` | `ease-out` |
+| `--animate-*` | `animate-spin` |
+
+**There is no `--font-size-*` namespace in v4.** Font sizes live under `--text-*`.
+A project writing `--font-size-lg` inside `@theme` has a dead variable that
+generates no utility — flag it (see `STACK-TW-003`).
+
+**Namespace resets:** `--color-*: initial` removes every default color, and
+`--*: initial` clears the entire default theme. If a reset is present, the default
+Tailwind palette/scale is NOT available — treat only the explicitly redefined
+tokens as valid, exactly like `theme.colors` (without `.extend`) in v3.
+
+**`@theme inline`** does not disable utility generation. It changes how the value is
+resolved: the generated utility carries the *resolved* value instead of a `var()`
+reference. Use it as the bridge signal — `@theme inline { --color-primary: var(--primary) }`
+is what makes a runtime `:root` variable reachable as `bg-primary`.
+`@theme static` emits all variables even when unused.
+
+**Scan scope:** v4 has no `content` array. Files are found by automatic source
+detection (the project root, minus `.gitignore`d paths), adjusted by
+`@import "tailwindcss" source("…")`, extra `@source "…"` rules, and
+`source(none)` which disables automatic detection entirely. Match ReserveLabs'
+scan scope to that, not to a `content` glob.
 
 ### CSS Custom Properties (Both Versions)
 
@@ -92,19 +148,26 @@ CSS custom properties used as design tokens:
   --background: 0 0% 100%;
   --foreground: 222.2 84% 4.9%;
   --primary: 222.2 47.4% 11.2%;
-  --secondary: 210 40% 96.1%;
-  --muted: 210 40% 96.1%;
-  --accent: 210 40% 96.1%;
-  --destructive: 0 84.2% 60.2%;
-  --border: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
   --radius: 0.5rem;
 }
 ```
 
-These are valid design tokens — especially common with shadcn/ui.
-Colors referenced via `hsl(var(--primary))` or `bg-primary` (Tailwind v4)
-are palette-compliant and must NOT be flagged.
+Sort every custom property you find into one of three buckets — the bucket
+decides whether it is a token, a bug, or noise:
+
+| Bucket | Where it lives | Meaning |
+|--------|---------------|---------|
+| **Registered token** | inside `@theme` / `@theme inline` (v4), or the JS config (v3) | Real design token. Generates utilities. Palette-compliant. |
+| **Runtime token** | `:root`, `.dark`, `[data-theme="…"]` — and bridged into `@theme inline` | Real design token, themeable at runtime. Palette-compliant. |
+| **Rogue variable** | `:root` (or a component file) with no bridge into `@theme` | Looks like a token, generates nothing. Usual cause of drift. |
+
+**In v4, `:root { --primary: … }` alone does NOT produce `bg-primary`.** It needs
+`@theme inline { --color-primary: var(--primary) }`. Projects migrated from v3 by
+hand often keep the `:root` block and lose the bridge — the class silently stops
+existing. This is `STACK-TW-004`, and it is one of the highest-signal v4 findings.
+
+Colors referenced via `hsl(var(--primary))` (v3-era shadcn) or `bg-primary`
+(bridged v4 token) are palette-compliant and must NOT be flagged.
 
 ---
 
@@ -164,7 +227,8 @@ even if other animation approaches exist in the project.
 - `animation-delay` and `animation-duration` inline styles
 - Complex `animate-[custom]` arbitrary value syntax in className
 - Intersection Observer usage for scroll-triggered animations
-- `tailwindcss-animate` plugin in Tailwind config
+- `tailwindcss-animate` plugin in Tailwind config (v3) or `tw-animate-css` imported
+  in CSS (v4) — same role, different era
 - Staggered animation patterns (multiple similar elements with offset delays)
 
 ### originui (Origin UI)
@@ -304,6 +368,134 @@ or using a shared className constant.
 - Layout utilities that naturally repeat: `container mx-auto px-4`
 - Components in `components/ui/` directory (these are primitives, repetition is expected)
 
+### Dead Theme Variable (Tailwind v4)
+
+**Rule ID:** `STACK-TW-003`
+**Check:** A variable inside `@theme` that does not match any v4 theme namespace.
+**Why:** v4 generates utilities from namespaces. `--font-size-lg`, `--colors-brand`,
+or `--spacing18` (missing dash) produce no class at all. The developer — or the AI —
+writes the token, uses `text-lg`/`bg-brand` in JSX, and gets the default value or
+nothing. Silent failure.
+**Confidence:** HIGH — this is mechanically verifiable against the namespace table.
+**Applies to:** v4 only.
+
+**Flag when:**
+- A `@theme` variable's prefix is not one of the namespaces listed above
+- Most common: `--font-size-*` (should be `--text-*`), plural forms (`--colors-*`),
+  and missing separator dashes
+
+**Do NOT flag when:**
+- The variable is inside `@theme inline` purely as a bridge target — it still has to
+  match a namespace, but the *value* being a `var()` is normal
+- The file is a plain `:root` block (that is a runtime token or rogue variable —
+  a different rule, `STACK-TW-004`)
+
+**Suggested fix:** `Rename to the correct v4 namespace (e.g. --font-size-2xs → --text-2xs)`
+
+### Broken Theme Bridge (Tailwind v4)
+
+**Rule ID:** `STACK-TW-004`
+**Check:** A `:root` variable that looks like a design token but is never bridged
+into `@theme`, while utility classes referencing it appear in components.
+**Why:** The most common failure of a hand-done v3 → v4 migration. `--primary` stays
+in `:root`, `@theme inline { --color-primary: var(--primary) }` is never written,
+and every `bg-primary` in the codebase silently resolves to nothing.
+**Confidence:** HIGH when the class is actually used; MEDIUM when the variable is
+merely orphaned.
+**Applies to:** v4 only.
+
+**Flag when:**
+- `bg-<name>` / `text-<name>` / `border-<name>` appears in components AND
+  `--color-<name>` is absent from every reachable `@theme` block
+- A `:root` token set (shadcn-style: `--primary`, `--muted`, `--destructive`, …)
+  exists with no corresponding `@theme inline` bridge
+
+**Do NOT flag when:**
+- The variable is consumed only through `var(--primary)` in hand-written CSS —
+  no utility is expected
+- The name collides with a default Tailwind color (`--primary` vs `bg-blue-500`)
+
+**Suggested fix:** `Bridge the runtime variable into the theme: @theme inline { --color-primary: var(--primary) }`
+
+### Split Source of Truth
+
+**Rule ID:** `STACK-TW-005`
+**Check:** The same design role defined in two places with two different values.
+**Why:** After a migration or a long AI session, `--primary` (in `:root`),
+`--color-primary` (in `@theme`), and `theme.extend.colors.primary` (in a still-loaded
+`tailwind.config.js`) can all exist and disagree. Whichever wins, the other two are
+lies that future prompts will read and propagate.
+**Confidence:** HIGH — differing values for the same role is unambiguous.
+
+**Flag when:**
+- A hybrid v4 setup (`@config`) has a token defined in both CSS and the JS config
+  with different values
+- The same token name is redefined across two `@theme` blocks in the import chain
+  with different values
+- A `var()` alias chain is circular or points at an undefined variable
+
+**Do NOT flag when:**
+- The redefinition is a deliberate theme override (`.dark { --primary: … }`) —
+  same role, different context, by design
+- The values are equal after normalization (`#3b82f6` vs `oklch(…)` of the same color)
+
+### Color Format Drift
+
+**Rule ID:** `STACK-TW-006`
+**Check:** One palette family expressed in mixed color formats.
+**Why:** v4 ships an OKLCH default palette, shadcn v4 emits OKLCH, and AI-generated
+code keeps writing hex. `--color-brand: #3b82f6` next to `--color-brand-dark: oklch(…)`
+makes the palette impossible to reason about — and impossible to interpolate cleanly.
+**Confidence:** INFO — this is a consistency finding, not a bug.
+
+**Flag when:**
+- Tokens in the same namespace family use 3+ different notations
+  (hex / rgb / hsl / oklch)
+
+**Do NOT flag when:**
+- A single format is used consistently, whichever it is
+- Only the format differs while the resolved color is identical — **normalize colors
+  before comparing.** Never report "different color" on a format difference alone.
+
+### Custom Utility Duplication (Tailwind v4)
+
+**Rule ID:** `STACK-TW-007`
+**Check:** The same abstraction expressed as `@utility`, as an `@apply` class, and as
+hand-written CSS — or an `@utility` body containing literal values instead of tokens.
+**Why:** v4 added `@utility` for first-class custom utilities. A drifting codebase
+accumulates all three forms of the same idea, and the newest AI-written one hardcodes
+`#3b82f6` instead of `var(--color-primary)`.
+**Confidence:** MEDIUM.
+**Applies to:** v4 only.
+
+**Flag when:**
+- Two or more of `@utility`, an `@apply` rule, and raw CSS define visually equivalent
+  output under different names
+- An `@utility` body uses literal colors/spacing that exist as theme tokens
+
+**Do NOT flag when:**
+- `@utility` and `@apply` merely coexist — they do different jobs. `@utility` *defines*
+  a new utility; `@apply` *consumes* existing ones. Coexistence is not drift.
+
+### Arbitrary Value Escape
+
+**Rule ID:** `STACK-TW-008`
+**Check:** Arbitrary values that bypass an existing token, especially when repeated.
+**Why:** `p-[17px]` in one file is a rounding accident. `bg-[#3b82f6]` in six files
+when `--color-primary` holds that exact value is the token system being routed around.
+**Confidence:** MEDIUM when repeated 3+ times; INFO for a single occurrence.
+
+**Flag when:**
+- An arbitrary value equals — or is within ~1px / one step of — an existing theme token
+- The same arbitrary value appears in 3+ files
+- v4's CSS-variable shorthand `bg-(--foo)` points at a rogue variable
+  (see `STACK-TW-004`)
+
+**Do NOT flag when:**
+- The value is genuinely one-off and computed: `w-[calc(100%-2rem)]`,
+  `grid-cols-[1fr_2fr_1fr]`, `max-h-[calc(100vh-4rem)]`
+- The project is v4 and the class is a **dynamic spacing utility** — see below
+
 ### next/font Usage
 
 **Rule ID:** `STACK-NJS-003`
@@ -346,6 +538,35 @@ intentional and correct in React/Next.js/Tailwind projects:
 - **`!important` modifier:** `!text-red-500` — Tailwind's important modifier. May
   indicate specificity issues but is a valid pattern.
 
+### Tailwind v4 Patterns
+- **Off-scale numeric utilities:** `p-17`, `w-29`, `mt-13` are **valid in v4**. The
+  spacing scale is derived dynamically — `p-<n>` compiles to
+  `padding: calc(var(--spacing) * <n>)`. Do NOT flag these as off-grid against a fixed
+  token list the way you would in v3. Only flag them if the project's rhythm is a clear
+  multiple (4/8) and the value breaks it.
+- **`@utility` alongside `@apply`:** Different jobs. `@utility` defines a new utility,
+  `@apply` consumes existing ones. Both in one stylesheet is normal.
+- **`@config "../tailwind.config.js"`:** A hybrid v4 setup, not a failed migration.
+  JS configs still work in v4, they are just no longer auto-detected. Note that
+  `corePlugins`, `safelist`, and `separator` are dropped in v4 — a config still
+  carrying them has genuinely dead options (safelisting moved to `@source inline(…)`).
+- **OKLCH color values:** `oklch(0.72 0.11 178)` is the v4 default palette format and
+  what shadcn/ui emits. It is not an exotic hand-written value.
+- **`@source` / `source(…)` rules:** These replace v3's `content` array. Their presence
+  is configuration, not clutter.
+
+### shadcn/ui on Tailwind v4
+- **`tw-animate-css` instead of `tailwindcss-animate`:** shadcn deprecated the old
+  plugin. Seeing `tw-animate-css` imported in CSS — with no plugin entry in any JS
+  config — is correct for v4, not a missing dependency.
+- **`:root` + `.dark` blocks outside `@layer base`, bridged by `@theme inline`:** This
+  is the documented shadcn v4 layout. The `:root` variables are runtime tokens and the
+  `@theme inline` block is the bridge — do NOT report the pair as a split source of
+  truth (`STACK-TW-005`).
+- **OKLCH values where older shadcn used `hsl(var(--x))`:** Expected. shadcn converted
+  its palette to OKLCH. Both forms are palette-compliant; only mixing three or more
+  notations in one family is a finding (`STACK-TW-006`).
+
 ### React Patterns
 - **Multiple similar components in `components/ui/`:** These are design system primitives.
   `Button`, `IconButton`, `LinkButton` are intentionally separate.
@@ -379,5 +600,6 @@ intentional and correct in React/Next.js/Tailwind projects:
 - **framer-motion + CSS animations:** framer-motion for complex orchestrated
   animations, CSS/Tailwind animations for simple transitions. Both in same
   project is fine.
-- **tailwindcss-animate plugin:** Required by shadcn/ui and magicui. Its presence
-  alongside framer-motion is NOT redundant.
+- **tailwindcss-animate plugin (v3) / tw-animate-css (v4):** Required by shadcn/ui
+  and magicui. Its presence alongside framer-motion is NOT redundant. Only flag when
+  BOTH are installed at once — that is a leftover from an incomplete v4 migration.

@@ -6,7 +6,9 @@ Developer says: "I'm going to build...", "plan...", "design...", or invokes dire
 ## Context Gathering
 Before asking questions, check:
 1. Does .reservelabs.yml exist? → Read overrides
-2. Does tailwind.config exist? → Extract theme tokens
+2. Which Tailwind major? → v4: collect @theme blocks from the CSS entry point's
+   import chain. v3: read tailwind.config. (Version comes from package.json, not
+   from the presence of a config file — see supported-stacks/react-nextjs-tailwind.md)
 3. What components already exist? → List for drift comparison baseline
 
 ## Gap Analysis Questions
